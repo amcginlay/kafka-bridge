@@ -37,7 +37,7 @@ func (p *WriterPool) Get(topic string) *kafka.Writer {
 		Brokers:      p.brokers,
 		Topic:        topic,
 		Balancer:     &kafka.LeastBytes{},
-		RequiredAcks: kafka.RequireAll,
+		RequiredAcks: int(kafka.RequireAll),
 		Async:        false,
 		Dialer:       p.dialer,
 	})
