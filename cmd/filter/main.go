@@ -5,7 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -51,12 +54,25 @@ func main() {
 	}()
 
 	matchStore := store.NewMatchStore()
+	matchers := make(map[string]*engine.Matcher)
+	for _, route := range cfg.Routes {
+		routeID := routeKey(route)
+		matchers[routeID] = engine.NewMatcher(routeID, route.MatchFields, matchStore)
+	}
 
 	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := startHTTPServer(ctx, cfg.HTTP.ListenAddr, matchers); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("http server stopped: %v", err)
+		}
+	}()
+
 	for _, route := range cfg.Routes {
 		route := route
 		routeID := routeKey(route)
-		matcher := engine.NewMatcher(routeID, route.MatchFields, matchStore)
+		matcher := matchers[routeID]
 
 		wg.Add(1)
 		go func() {
@@ -175,4 +191,62 @@ func slug(in string) string {
 
 func routeKey(route config.Route) string {
 	return slug(route.DisplayName())
+}
+
+func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engine.Matcher) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/reference/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		routeID := strings.TrimPrefix(r.URL.Path, "/reference/")
+		if routeID == "" {
+			http.Error(w, "route id required", http.StatusBadRequest)
+			return
+		}
+		matcher, ok := matchers[routeID]
+		if !ok {
+			http.Error(w, "route not found", http.StatusNotFound)
+			return
+		}
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read body failed", http.StatusBadRequest)
+			return
+		}
+		added, err := matcher.ProcessReference(body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid payload: %v", err), http.StatusBadRequest)
+			return
+		}
+		status := http.StatusOK
+		if added {
+			status = http.StatusCreated
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	log.Printf("http server listening on %s", addr)
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return ctx.Err()
 }

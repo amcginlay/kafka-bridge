@@ -15,6 +15,7 @@ This Go utility consumes JSON payloads from one Kafka cluster (secured with mTLS
    - `sourceCluster`: brokers plus TLS certs/keys for the mTLS-protected cluster hosting the source topics.
    - `bridgeCluster`: brokers (and optional TLS) for the cluster hosting reference feeds and destination topics.
    - `clientId`, `sourceGroupId`, `referenceGroupId`: identifiers reused across consumers and producers.
+   - `http`: optional admin server, `listenAddr` defaults to `:8080`. POST reference payloads here instead of (or in addition to) consuming them from reference topics.
    - `routes`: each route declares source topics, destination topic, the reference feed topics tied to that source, and `matchFields` (field paths such as `fieldA` or `subObj.fieldB`) that are extracted from both reference and source payloads for matching.
 
 Example snippet:
@@ -38,6 +39,18 @@ routes:
     referenceTopics: ["reference-feed-topic-a", "reference-feed-topic-b"]
     matchFields: ["fieldA", "subObj.fieldB"]
 ```
+
+### Add reference payloads via HTTP
+
+Run the service and POST a JSON body (same shape as reference feed messages) to add a fingerprint:
+
+```bash
+curl -X POST http://localhost:8080/reference/route-a \
+  -H 'Content-Type: application/json' \
+  -d '{"fieldA":"value1","subObj":{"fieldB":"value2"}}'
+```
+
+The route key matches the `name` (or falls back to `destinationTopic`, lowercased and slugged).
 
 ### Run
 

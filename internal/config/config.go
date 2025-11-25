@@ -23,6 +23,7 @@ type Config struct {
 	ReferenceGroupID string        `yaml:"referenceGroupId"`
 	CommitInterval   time.Duration `yaml:"commitInterval"`
 	Routes           []Route       `yaml:"routes"`
+	HTTP             HTTPServer    `yaml:"http"`
 }
 
 // ClusterConfig holds broker and TLS settings.
@@ -46,6 +47,11 @@ type Route struct {
 	DestinationTopic string   `yaml:"destinationTopic"`
 	ReferenceTopics  []string `yaml:"referenceTopics"`
 	MatchFields      []string `yaml:"matchFields"`
+}
+
+// HTTPServer configures the optional admin HTTP listener.
+type HTTPServer struct {
+	ListenAddr string `yaml:"listenAddr"`
 }
 
 // Load parses the YAML configuration.
@@ -95,6 +101,9 @@ func (c *Config) Validate() error {
 		if err := c.Routes[i].validate(i); err != nil {
 			return err
 		}
+	}
+	if c.HTTP.ListenAddr == "" {
+		c.HTTP.ListenAddr = ":8080"
 	}
 	return nil
 }

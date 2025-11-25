@@ -4,7 +4,7 @@
 The repo hosts a single Go service that filters Kafka traffic. Entrypoint code lives in `cmd/filter/`, reusable logic in `internal/` (`config` for YAML parsing + TLS helpers, `kafka` for writer pooling, `store` for cached match fingerprints). Runtime configuration sits under `config/` with `config.example.yaml` as the template. Add helper docs (like runbooks) under project root; keep binaries out of source control by writing them to `bin/` or `/tmp`.
 
 ## Build, Test, and Development Commands
-- `go run ./cmd/filter -config config/config.yaml` – start the bridge locally; respects Ctrl+C/SIGTERM.
+- `go run ./cmd/filter -config config/config.yaml` – start the bridge locally; respects Ctrl+C/SIGTERM and exposes `http.listenAddr` for manual reference injection.
 - `go build -o bin/kafka-filter ./cmd/filter` – produce a static binary for deployment.
 - `go test ./...` – run future unit tests (currently none) and catch compile errors.
 - `golangci-lint run` – optional but recommended; configure via `.golangci.yml` when added.

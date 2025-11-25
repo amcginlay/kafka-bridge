@@ -12,6 +12,8 @@ clientId: kafka-filter
 sourceGroupId: filter-source
 referenceGroupId: filter-reference
 commitInterval: 2s
+http:
+  listenAddr: :8080
 routes:
   - name: route-a
     sourceTopics:
