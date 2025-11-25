@@ -1,6 +1,6 @@
 ## Kafka Topic Filter Tool
 
-This Go utility consumes JSON payloads from one or more Kafka topics, inspects the `data.isn` field, and forwards matching records to configured destination topics. It is designed for lightweight routing scenarios such as mirroring `"test-topic"` messages into `"filtered-test-topic"` when their `data.isn` is on an allowlist.
+This Go utility consumes JSON payloads from one or more Kafka topics, inspects the `data.isn` field, and forwards matching records to configured destination topics. It also subscribes to a secondary broker to ingest authoritative `isn` values and uses that live cache to decide which messages should be forwarded.
 
 ### Requirements
 
@@ -13,11 +13,16 @@ This Go utility consumes JSON payloads from one or more Kafka topics, inspects t
 2. Adjust the file:
    - `brokers`: list of Kafka bootstrap servers (e.g., `localhost:9092`).
    - `groupId` / `clientId`: identifiers for the consumer group and producer client.
-   - `routes`: each block declares `sourceTopics`, a `destinationTopic`, and optional `matchValues` (allowlisted `data.isn` entries). Omit `matchValues` to forward every message.
+   - `referenceFeed`: connection details for the broker that provides valid `isn` values. Supply `brokers`, `groupId`, and `topics`. Set `resetState: true` to clear any previously cached identifiers on startup.
+   - `routes`: each block declares `sourceTopics`, a `destinationTopic`, and optional `matchValues` (static allowlisted `data.isn` entries). Every message is additionally filtered against the cached `isn` list from the reference feed.
 
 Example snippet:
 
 ```yaml
+referenceFeed:
+  brokers: ["other-broker:9093"]
+  groupId: bridge-reference
+  topics: ["reference-topic"]
 routes:
   - name: test route
     sourceTopics: ["test-topic"]

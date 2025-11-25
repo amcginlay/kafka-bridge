@@ -18,6 +18,7 @@ type Config struct {
 	ClientID       string        `yaml:"clientId"`
 	CommitInterval time.Duration `yaml:"commitInterval"`
 	Routes         []Route       `yaml:"routes"`
+	ReferenceFeed  ReferenceFeed `yaml:"referenceFeed"`
 }
 
 // Route wires messages from one or more source topics to a destination topic.
@@ -26,6 +27,15 @@ type Route struct {
 	SourceTopics     []string `yaml:"sourceTopics"`
 	DestinationTopic string   `yaml:"destinationTopic"`
 	MatchValues      []string `yaml:"matchValues"`
+}
+
+// ReferenceFeed describes the broker/topics that populate the allowed ISN set.
+type ReferenceFeed struct {
+	Brokers    []string `yaml:"brokers"`
+	GroupID    string   `yaml:"groupId"`
+	ClientID   string   `yaml:"clientId"`
+	Topics     []string `yaml:"topics"`
+	ResetState bool     `yaml:"resetState"`
 }
 
 // Load reads and validates the configuration file.
@@ -69,6 +79,10 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if err := c.ReferenceFeed.validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -78,6 +92,19 @@ func (r *Route) validate(idx int) error {
 	}
 	if r.DestinationTopic == "" {
 		return fmt.Errorf("route %d: destinationTopic is required", idx)
+	}
+	return nil
+}
+
+func (r ReferenceFeed) validate() error {
+	if len(r.Brokers) == 0 {
+		return errors.New("referenceFeed.brokers cannot be empty")
+	}
+	if r.GroupID == "" {
+		return errors.New("referenceFeed.groupId is required")
+	}
+	if len(r.Topics) == 0 {
+		return errors.New("referenceFeed.topics cannot be empty")
 	}
 	return nil
 }

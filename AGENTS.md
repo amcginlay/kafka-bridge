@@ -1,22 +1,22 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The bridge is split into JVM modules: `bridge-runtime/` (common APIs), `http-bridge/` (REST + WebSocket adapters), `kafka-clients/` (producer/consumer wrappers), and `integration-tests/`. Source lives under each module's `src/main/java` and `src/main/resources`; unit tests live in `src/test/java`, while long-running suites sit in `src/it/java`. Sample payloads, Postman collections, and compose files reside in `examples/` and `infra/`. Keep assets (schemas, JSON fixtures) near the feature they serve to simplify reviews.
+The repo hosts a single Go service that filters Kafka traffic. Entrypoint code lives in `cmd/filter/`, reusable logic in `internal/` (`config` for YAML parsing, `kafka` for writer pooling, `store` for cached ISNs). Runtime configuration sits under `config/` with `config.example.yaml` as the template. Add helper docs (like runbooks) under project root; keep binaries out of source control by writing them to `bin/` or `/tmp`.
 
 ## Build, Test, and Development Commands
-- `mvn clean install` – compiles all modules, runs unit tests, and produces runnable JARs under `*/target/`.
-- `mvn -pl http-bridge spring-boot:run` – starts the HTTP bridge with hot reload against your local Kafka cluster.
-- `mvn verify -Pintegration-tests` – executes Docker-based integration suites defined in `integration-tests/pom.xml` (requires Docker Desktop).
-- `docker compose -f infra/docker-compose.yml up kafka bridge` – spins Kafka, ZooKeeper, and a dev bridge for manual testing.
+- `go run ./cmd/filter -config config/config.yaml` – start the bridge locally; respects Ctrl+C/SIGTERM.
+- `go build -o bin/kafka-filter ./cmd/filter` – produce a static binary for deployment.
+- `go test ./...` – run future unit tests (currently none) and catch compile errors.
+- `golangci-lint run` – optional but recommended; configure via `.golangci.yml` when added.
 
 ## Coding Style & Naming Conventions
-Use Java 17, 4-space indentation, and favor explicit types. Classes/interfaces follow `UpperCamelCase`, methods `lowerCamelCase`, constants `UPPER_SNAKE_CASE`. Topics, consumer groups, and configs in samples should stay kebab-case (e.g., `orders-stream`). Run `mvn spotless:apply` and `mvn checkstyle:check` before opening a PR; never commit generated code without adding a `.gitattributes` rule.
+Use Go 1.21. Follow `gofmt` formatting and keep files ASCII. Package names stay lowercase and short (`store`, `kafka`). Public structs/functions need doc comments when exported outside a package. Topic, consumer-group, and config identifiers in examples should stay kebab-case (`bridge-reference`). Avoid global state; prefer context-aware functions for goroutines handling Kafka IO.
 
 ## Testing Guidelines
-Unit tests belong beside the code they exercise, using JUnit 5 and AssertJ. Mock Kafka interactions with `KafkaTestUtils`; reserve real broker calls for integration tests tagged `@Tag("it")`. Name tests `ClassNameTest` and integration suites `ClassNameIT`. Target ≥80% line coverage for new modules and document manual verification steps in `docs/testing.md` when automation is not possible.
+Place tests next to implementation files (e.g., `internal/store/store_test.go`). Use Go’s `testing` package with table-driven cases. Mock Kafka interactions using in-memory constructs or `kafka-go`’s `Conn` test helpers; never rely on production brokers. If a change cannot be automatically tested (e.g., requires a live cluster), describe the manual steps in PR notes.
 
 ## Commit & Pull Request Guidelines
-Adopt Conventional Commits (`feat:`, `fix:`, `chore:`). Keep messages under 72 characters in the subject and include context or Jira links in the body. Each PR should describe the bridge scenario solved, list test commands executed, reference an issue ID, and attach logs or screenshots if behavior changes. Request reviews from ownership code owners listed in `CODEOWNERS`, and wait for green CI plus at least one approval before merging.
+Prefer Conventional Commits (`feat: add reference feed`). Keep subject lines ≤72 chars, wrap bodies at 100 chars, and mention Jira/GitHub IDs when relevant. PRs should summarize the scenario, list configs touched, and paste log excerpts demonstrating filtered traffic. Request review from another Go maintainer; merge only after green CI and at least one approval.
 
 ## Security & Configuration Tips
-Store Kafka credentials in `.env.local` (ignored by git) and load them through Spring's config placeholders. Never check in cloud secrets; provide sanitized examples via `config/example-bridge.properties`. Rotate SASL credentials in examples quarterly and reference the shared Vault path when updating CI secrets.
+Store secrets (broker creds, SASL configs) in environment variables or `.env.local` (gitignored). `config/config.yaml` should reference Vault/secret managers rather than inline passwords. When sharing sample configs, redact any tenant info. If the reference feed contains sensitive identifiers, ensure downstream logs obfuscate them before exporting to shared systems.

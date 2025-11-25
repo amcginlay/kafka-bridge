@@ -12,11 +12,13 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 
 	"kafka-bridge/internal/config"
 	kafkapkg "kafka-bridge/internal/kafka"
+	"kafka-bridge/internal/store"
 )
 
 func main() {
@@ -39,13 +41,26 @@ func main() {
 		}
 	}()
 
+	isnStore := store.NewISNStore()
+	if cfg.ReferenceFeed.ResetState {
+		isnStore.Reset()
+	}
+
 	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := runReferenceCollector(ctx, cfg.ReferenceFeed, isnStore); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("reference collector stopped: %v", err)
+		}
+	}()
+
 	for _, route := range cfg.Routes {
 		route := route
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := streamRoute(ctx, cfg, route, writerPool); err != nil && !errors.Is(err, context.Canceled) {
+			if err := streamRoute(ctx, cfg, route, writerPool, isnStore); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("route %s stopped: %v", route.DisplayName(), err)
 			}
 		}()
@@ -54,7 +69,7 @@ func main() {
 	wg.Wait()
 }
 
-func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, writers *kafkapkg.WriterPool) error {
+func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, writers *kafkapkg.WriterPool, isnStore *store.ISNStore) error {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        cfg.Brokers,
 		GroupID:        fmt.Sprintf("%s-%s", cfg.GroupID, slug(route.DisplayName())),
@@ -70,7 +85,7 @@ func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, wr
 			return err
 		}
 
-		match, isnValue, err := matchesISN(m.Value, route.MatchValues)
+		match, isnValue, err := matchesISN(m.Value, route.MatchValues, isnStore)
 		if err != nil {
 			log.Printf("route %s: skip invalid JSON: %v", route.DisplayName(), err)
 			continue
@@ -88,33 +103,53 @@ func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, wr
 	}
 }
 
-func matchesISN(value []byte, allowed []string) (bool, string, error) {
-	if len(allowed) == 0 {
+func matchesISN(value []byte, allowed []string, isnStore *store.ISNStore) (bool, string, error) {
+	if len(allowed) == 0 && isnStore == nil {
 		return true, "", nil
 	}
 
+	isn, err := extractDataISN(value)
+	if err != nil {
+		return false, "", err
+	}
+
+	if len(allowed) > 0 {
+		matched := false
+		for _, candidate := range allowed {
+			if candidate == isn {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false, isn, nil
+		}
+	}
+
+	if isnStore != nil && !isnStore.Contains(isn) {
+		return false, isn, nil
+	}
+
+	return true, isn, nil
+}
+
+func extractDataISN(value []byte) (string, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(value, &payload); err != nil {
-		return false, "", err
+		return "", err
 	}
 
 	data, ok := payload["data"].(map[string]any)
 	if !ok {
-		return false, "", errors.New("missing data object")
+		return "", errors.New("missing data object")
 	}
 
 	raw, ok := data["isn"]
 	if !ok {
-		return false, "", errors.New("data.isn not found")
+		return "", errors.New("data.isn not found")
 	}
 
-	isn := fmt.Sprintf("%v", raw)
-	for _, candidate := range allowed {
-		if candidate == isn {
-			return true, isn, nil
-		}
-	}
-	return false, isn, nil
+	return fmt.Sprintf("%v", raw), nil
 }
 
 func slug(in string) string {
@@ -131,4 +166,52 @@ func cloneMessage(m kafka.Message) kafka.Message {
 	}
 	copy(cloned.Headers, m.Headers)
 	return cloned
+}
+
+func runReferenceCollector(ctx context.Context, feed config.ReferenceFeed, store *store.ISNStore) error {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        feed.Brokers,
+		GroupID:        feed.GroupID,
+		GroupTopics:    feed.Topics,
+		CommitInterval: 5 * time.Second,
+	})
+	defer reader.Close()
+
+	log.Printf("reference collector listening to %s", strings.Join(feed.Topics, ","))
+	for {
+		msg, err := reader.ReadMessage(ctx)
+		if err != nil {
+			return err
+		}
+
+		isn, err := extractReferenceISN(msg.Value)
+		if err != nil {
+			log.Printf("reference collector: invalid JSON skipped: %v", err)
+			continue
+		}
+
+		if added := store.Add(isn); added {
+			log.Printf("reference collector: added isn=%s (total=%d)", isn, store.Size())
+		}
+	}
+}
+
+func extractReferenceISN(value []byte) (string, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(value, &payload); err != nil {
+		return "", err
+	}
+
+	if raw, ok := payload["isn"]; ok {
+		return fmt.Sprintf("%v", raw), nil
+	}
+
+	// fall back to nested structure for consistency
+	if data, ok := payload["data"].(map[string]any); ok {
+		if raw, ok := data["isn"]; ok {
+			return fmt.Sprintf("%v", raw), nil
+		}
+	}
+
+	return "", errors.New("isn not found")
 }

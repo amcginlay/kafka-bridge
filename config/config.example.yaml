@@ -3,6 +3,14 @@ brokers:
 groupId: bridge-filter
 clientId: bridge-filter-local
 commitInterval: 2s
+referenceFeed:
+  brokers:
+    - other-broker:9093
+  groupId: bridge-reference
+  clientId: bridge-reference-local
+  topics:
+    - isn-reference-topic
+  resetState: true
 routes:
   - name: test filter
     sourceTopics:
