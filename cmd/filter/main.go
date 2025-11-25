@@ -118,14 +118,14 @@ func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, di
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        cfg.SourceCluster.Brokers,
 		GroupID:        fmt.Sprintf("%s-%s", cfg.SourceGroupID, slug(route.DisplayName())),
-		GroupTopics:    route.SourceTopics,
+		GroupTopics:    []string{route.SourceTopic},
 		CommitInterval: cfg.CommitInterval,
 		StartOffset:    kafka.LastOffset,
 		Dialer:         dialer,
 	})
 	defer reader.Close()
 
-	log.Printf("route %s listening to source topics %s", route.DisplayName(), strings.Join(route.SourceTopics, ","))
+	log.Printf("route %s listening to source topic %s", route.DisplayName(), route.SourceTopic)
 	for {
 		msg, err := reader.ReadMessage(ctx)
 		if err != nil {

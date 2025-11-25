@@ -19,8 +19,7 @@ storage:
   flushInterval: 10s
 routes:
   - name: route-a
-    sourceTopics:
-      - source-topic-a
+    sourceTopic: source-topic-a
     destinationTopic: filtered-topic-a
     referenceFeeds:
       - topic: reference-feed-topic-a
@@ -30,8 +29,7 @@ routes:
         matchFields:
           - subObj.fieldB
   - name: route-b
-    sourceTopics:
-      - source-topic-b
+    sourceTopic: source-topic-b
     destinationTopic: filtered-topic-b
     referenceFeeds:
       - topic: reference-feed-topic-c

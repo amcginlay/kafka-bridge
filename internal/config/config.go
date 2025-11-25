@@ -43,10 +43,10 @@ type TLSConfig struct {
 
 // Route maps one or more source topics to a destination topic with reference feeds.
 type Route struct {
-	Name             string           `yaml:"name"`
-	SourceTopics     []string         `yaml:"sourceTopics"`
-	DestinationTopic string           `yaml:"destinationTopic"`
-	ReferenceFeeds   []ReferenceFeed  `yaml:"referenceFeeds"`
+	Name             string          `yaml:"name"`
+	SourceTopic      string          `yaml:"sourceTopic"`
+	DestinationTopic string          `yaml:"destinationTopic"`
+	ReferenceFeeds   []ReferenceFeed `yaml:"referenceFeeds"`
 }
 
 // HTTPServer configures the optional admin HTTP listener.
@@ -149,8 +149,8 @@ func (t *TLSConfig) validate() error {
 }
 
 func (r *Route) validate(idx int) error {
-	if len(r.SourceTopics) == 0 {
-		return fmt.Errorf("route %d: sourceTopics cannot be empty", idx)
+	if r.SourceTopic == "" {
+		return fmt.Errorf("route %d: sourceTopic cannot be empty", idx)
 	}
 	if r.DestinationTopic == "" {
 		return fmt.Errorf("route %d: destinationTopic is required", idx)

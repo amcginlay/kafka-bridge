@@ -22,9 +22,12 @@ data:
     commitInterval: 2s
     http:
       listenAddr: ":8080"
+    storage:
+      path: /var/lib/kafka-bridge/cache.json
+      flushInterval: 10s
     routes:
       - name: route-a
-        sourceTopics: ["source-topic-a"]
+        sourceTopic: "source-topic-a"
         destinationTopic: filtered-topic-a
         referenceFeeds:
           - topic: reference-feed-topic-a

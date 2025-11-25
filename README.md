@@ -17,7 +17,7 @@ This Go utility consumes JSON payloads from one Kafka cluster (secured with mTLS
    - `clientId`, `sourceGroupId`, `referenceGroupId`: identifiers reused across consumers and producers.
    - `http`: optional admin server, `listenAddr` defaults to `:8080`. POST reference payloads here instead of (or in addition to) consuming them from reference topics.
    - `storage`: optional persistence; set `path` (e.g., `/var/lib/kafka-bridge/cache.json`) and `flushInterval` to keep cached reference values across restarts.
-   - `routes`: each route declares source topics, destination topic, and per-reference-topic `matchFields` (field paths such as `fieldA` or `subObj.fieldB`) that are extracted from reference payloads; source payloads are matched if any cached value appears anywhere in the message.
+   - `routes`: each route declares a single `sourceTopic`, destination topic, and per-reference-topic `matchFields` (field paths such as `fieldA` or `subObj.fieldB`) that are extracted from reference payloads; source payloads are matched if any cached value appears anywhere in the message.
 
 Example snippet:
 
@@ -38,7 +38,7 @@ storage:
   flushInterval: 10s
 routes:
   - name: route-a
-    sourceTopics: ["source-topic-a"]
+    sourceTopic: "source-topic-a"
     destinationTopic: filtered-topic-a
     referenceFeeds:
       - topic: reference-feed-topic-a
@@ -49,12 +49,12 @@ routes:
 
 ### Add reference payloads via HTTP
 
-Run the service and POST a JSON body (same shape as reference feed messages) to add a fingerprint:
+Run the service and POST a JSON array of strings to add reference values manually:
 
 ```bash
 curl -X POST http://localhost:8080/reference/route-a \
   -H 'Content-Type: application/json' \
-  -d '{"fieldA":"value1","subObj":{"fieldB":"value2"}}'
+  -d '["value1","value2"]'
 ```
 
 The route key matches the `name` (or falls back to `destinationTopic`, lowercased and slugged).
