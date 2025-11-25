@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -171,6 +172,10 @@ func fingerprintMessage(value []byte, fields []string) (string, error) {
 		}
 		entries[i] = fieldValue{Path: field, Value: val}
 	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Path < entries[j].Path
+	})
 
 	data, err := json.Marshal(entries)
 	if err != nil {
