@@ -43,16 +43,21 @@ type TLSConfig struct {
 
 // Route maps one or more source topics to a destination topic with reference feeds.
 type Route struct {
-	Name             string   `yaml:"name"`
-	SourceTopics     []string `yaml:"sourceTopics"`
-	DestinationTopic string   `yaml:"destinationTopic"`
-	ReferenceTopics  []string `yaml:"referenceTopics"`
-	MatchFields      []string `yaml:"matchFields"`
+	Name             string           `yaml:"name"`
+	SourceTopics     []string         `yaml:"sourceTopics"`
+	DestinationTopic string           `yaml:"destinationTopic"`
+	ReferenceFeeds   []ReferenceFeed  `yaml:"referenceFeeds"`
 }
 
 // HTTPServer configures the optional admin HTTP listener.
 type HTTPServer struct {
 	ListenAddr string `yaml:"listenAddr"`
+}
+
+// ReferenceFeed describes per-topic extraction rules.
+type ReferenceFeed struct {
+	Topic       string   `yaml:"topic"`
+	MatchFields []string `yaml:"matchFields"`
 }
 
 // Storage configures optional on-disk persistence for cached values.
@@ -150,20 +155,25 @@ func (r *Route) validate(idx int) error {
 	if r.DestinationTopic == "" {
 		return fmt.Errorf("route %d: destinationTopic is required", idx)
 	}
-	if len(r.ReferenceTopics) == 0 {
-		return fmt.Errorf("route %d: referenceTopics cannot be empty", idx)
+	if len(r.ReferenceFeeds) == 0 {
+		return fmt.Errorf("route %d: referenceFeeds cannot be empty", idx)
 	}
-	if len(r.MatchFields) == 0 {
-		return fmt.Errorf("route %d: matchFields cannot be empty", idx)
-	}
-	for _, field := range r.MatchFields {
-		parts := strings.Split(field, ".")
-		if len(parts) == 0 || len(parts) > 2 {
-			return fmt.Errorf("route %d: match field %q must be 'field' or 'parent.child'", idx, field)
+	for fi, feed := range r.ReferenceFeeds {
+		if feed.Topic == "" {
+			return fmt.Errorf("route %d: reference feed %d topic is required", idx, fi)
 		}
-		for _, part := range parts {
-			if part == "" {
-				return fmt.Errorf("route %d: match field %q is invalid", idx, field)
+		if len(feed.MatchFields) == 0 {
+			return fmt.Errorf("route %d: reference feed %s matchFields cannot be empty", idx, feed.Topic)
+		}
+		for _, field := range feed.MatchFields {
+			parts := strings.Split(field, ".")
+			if len(parts) == 0 || len(parts) > 2 {
+				return fmt.Errorf("route %d: match field %q must be 'field' or 'parent.child'", idx, field)
+			}
+			for _, part := range parts {
+				if part == "" {
+					return fmt.Errorf("route %d: match field %q is invalid", idx, field)
+				}
 			}
 		}
 	}

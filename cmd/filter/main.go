@@ -57,7 +57,7 @@ func main() {
 	matchers := make(map[string]*engine.Matcher)
 	for _, route := range cfg.Routes {
 		routeID := routeKey(route)
-		matchers[routeID] = engine.NewMatcher(routeID, route.MatchFields, matchStore)
+		matchers[routeID] = engine.NewMatcher(routeID, route.ReferenceFeeds, matchStore)
 	}
 
 	if cfg.Storage.Path != "" {
@@ -154,21 +154,22 @@ func runReferenceCollector(ctx context.Context, cfg *config.Config, route config
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        cfg.BridgeCluster.Brokers,
 		GroupID:        fmt.Sprintf("%s-%s", cfg.ReferenceGroupID, slug(route.DisplayName())),
-		GroupTopics:    route.ReferenceTopics,
+		GroupTopics:    referenceTopics(route.ReferenceFeeds),
 		CommitInterval: cfg.CommitInterval,
 		StartOffset:    kafka.LastOffset,
 		Dialer:         dialer,
 	})
 	defer reader.Close()
 
-	log.Printf("reference collector %s listening to %s", route.DisplayName(), strings.Join(route.ReferenceTopics, ","))
+	log.Printf("reference collector %s listening to %s", route.DisplayName(), strings.Join(referenceTopics(route.ReferenceFeeds), ","))
+	log.Printf("reference collector %s listening to %s", route.DisplayName(), strings.Join(referenceTopics(route.ReferenceFeeds), ","))
 	for {
 		msg, err := reader.ReadMessage(ctx)
 		if err != nil {
 			return err
 		}
 
-		added, err := matcher.ProcessReference(msg.Value)
+		added, err := matcher.ProcessReference(msg.Topic, msg.Value)
 		if err != nil {
 			log.Printf("reference collector %s: invalid payload skipped: %v", route.DisplayName(), err)
 			continue
@@ -198,6 +199,14 @@ func slug(in string) string {
 
 func routeKey(route config.Route) string {
 	return slug(route.DisplayName())
+}
+
+func referenceTopics(feeds []config.ReferenceFeed) []string {
+	out := make([]string, 0, len(feeds))
+	for _, f := range feeds {
+		out = append(out, f.Topic)
+	}
+	return out
 }
 
 func loadSnapshot(path string, store *store.MatchStore) error {
@@ -242,6 +251,11 @@ func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engi
 			http.Error(w, "route id required", http.StatusBadRequest)
 			return
 		}
+		topic := r.URL.Query().Get("topic")
+		if topic == "" {
+			http.Error(w, "topic query param required", http.StatusBadRequest)
+			return
+		}
 		matcher, ok := matchers[routeID]
 		if !ok {
 			http.Error(w, "route not found", http.StatusNotFound)
@@ -253,7 +267,7 @@ func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engi
 			http.Error(w, "read body failed", http.StatusBadRequest)
 			return
 		}
-		added, err := matcher.ProcessReference(body)
+		added, err := matcher.ProcessReference(topic, body)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid payload: %v", err), http.StatusBadRequest)
 			return

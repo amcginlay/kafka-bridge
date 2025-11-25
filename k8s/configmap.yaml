@@ -26,5 +26,8 @@ data:
       - name: route-a
         sourceTopics: ["source-topic-a"]
         destinationTopic: filtered-topic-a
-        referenceTopics: ["reference-feed-topic-a", "reference-feed-topic-b"]
-        matchFields: ["fieldA", "subObj.fieldB"]
+        referenceFeeds:
+          - topic: reference-feed-topic-a
+            matchFields: ["fieldA"]
+          - topic: reference-feed-topic-b
+            matchFields: ["subObj.fieldB"]

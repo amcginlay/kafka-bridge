@@ -6,33 +6,43 @@ import (
 	"sort"
 	"strings"
 
+	"kafka-bridge/internal/config"
 	"kafka-bridge/internal/store"
 )
 
 // Matcher coordinates reference caching and source matching per route.
 type Matcher struct {
 	routeID string
-	fields  []string
+	fields  map[string][]string
 	store   *store.MatchStore
 }
 
 // NewMatcher constructs a matcher for a specific route.
-func NewMatcher(routeID string, fields []string, store *store.MatchStore) *Matcher {
+func NewMatcher(routeID string, feeds []config.ReferenceFeed, store *store.MatchStore) *Matcher {
+	fieldMap := make(map[string][]string, len(feeds))
+	for _, f := range feeds {
+		fieldMap[f.Topic] = append([]string(nil), f.MatchFields...)
+	}
 	return &Matcher{
 		routeID: routeID,
-		fields:  fields,
+		fields:  fieldMap,
 		store:   store,
 	}
 }
 
-// ProcessReference ingests a reference payload and stores each extracted value.
-func (m *Matcher) ProcessReference(payload []byte) (bool, error) {
+// ProcessReference ingests a reference payload from a specific topic and stores each extracted value.
+func (m *Matcher) ProcessReference(topic string, payload []byte) (bool, error) {
+	fields, ok := m.fields[topic]
+	if !ok {
+		return false, fmt.Errorf("no match fields configured for topic %s", topic)
+	}
+
 	var body map[string]any
 	if err := json.Unmarshal(payload, &body); err != nil {
 		return false, err
 	}
 
-	values, err := extractMatchValues(body, m.fields)
+	values, err := extractMatchValues(body, fields)
 	if err != nil {
 		return false, err
 	}

@@ -17,7 +17,7 @@ This Go utility consumes JSON payloads from one Kafka cluster (secured with mTLS
    - `clientId`, `sourceGroupId`, `referenceGroupId`: identifiers reused across consumers and producers.
    - `http`: optional admin server, `listenAddr` defaults to `:8080`. POST reference payloads here instead of (or in addition to) consuming them from reference topics.
    - `storage`: optional persistence; set `path` (e.g., `/var/lib/kafka-bridge/cache.json`) and `flushInterval` to keep cached reference values across restarts.
-   - `routes`: each route declares source topics, destination topic, the reference feed topics tied to that source, and `matchFields` (field paths such as `fieldA` or `subObj.fieldB`) that are extracted from both reference and source payloads for matching.
+   - `routes`: each route declares source topics, destination topic, and per-reference-topic `matchFields` (field paths such as `fieldA` or `subObj.fieldB`) that are extracted from reference payloads; source payloads are matched if any cached value appears anywhere in the message.
 
 Example snippet:
 
@@ -40,8 +40,11 @@ routes:
   - name: route-a
     sourceTopics: ["source-topic-a"]
     destinationTopic: filtered-topic-a
-    referenceTopics: ["reference-feed-topic-a", "reference-feed-topic-b"]
-    matchFields: ["fieldA", "subObj.fieldB"]
+    referenceFeeds:
+      - topic: reference-feed-topic-a
+        matchFields: ["fieldA"]
+      - topic: reference-feed-topic-b
+        matchFields: ["subObj.fieldB"]
 ```
 
 ### Add reference payloads via HTTP

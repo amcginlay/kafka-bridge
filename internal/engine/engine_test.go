@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"kafka-bridge/internal/config"
 	"kafka-bridge/internal/store"
 )
 
@@ -33,7 +34,10 @@ func TestFingerprintMissingField(t *testing.T) {
 
 func TestMatcherReferenceAndForward(t *testing.T) {
 	s := store.NewMatchStore()
-	m := NewMatcher("route", []string{"fieldA", "sub.fieldB"}, s)
+	m := NewMatcher("route", []config.ReferenceFeed{
+		{Topic: "feed-a", MatchFields: []string{"fieldA"}},
+		{Topic: "feed-b", MatchFields: []string{"sub.fieldB"}},
+	}, s)
 
 	refPayload := map[string]any{
 		"fieldA": "value1",
@@ -41,9 +45,13 @@ func TestMatcherReferenceAndForward(t *testing.T) {
 	}
 	refBytes, _ := json.Marshal(refPayload)
 
-	added, err := m.ProcessReference(refBytes)
+	added, err := m.ProcessReference("feed-a", refBytes)
 	if err != nil || !added {
 		t.Fatalf("expected reference to be added, err=%v", err)
+	}
+	added, err = m.ProcessReference("feed-b", refBytes)
+	if err != nil || !added {
+		t.Fatalf("expected second reference to be added, err=%v", err)
 	}
 
 	srcPayload := map[string]any{
