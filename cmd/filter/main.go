@@ -37,9 +37,13 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	sourceDialer, err := buildDialer(cfg.SourceCluster, cfg.ClientID)
-	if err != nil {
-		log.Fatalf("source dialer: %v", err)
+	sourceDialers := make(map[string]*kafka.Dialer, len(cfg.SourceClusters))
+	for _, sc := range cfg.SourceClusters {
+		dialer, err := buildDialer(sc.ClusterConfig(), cfg.ClientID)
+		if err != nil {
+			log.Fatalf("source dialer %s: %v", sc.Name, err)
+		}
+		sourceDialers[sc.Name] = dialer
 	}
 	bridgeDialer, err := buildDialer(cfg.BridgeCluster, cfg.ClientID)
 	if err != nil {
@@ -81,6 +85,15 @@ func main() {
 		routeID := routeKey(route)
 		matcher := matchers[routeID]
 
+		sourceCluster, ok := cfg.SourceClusterByName(route.SourceCluster)
+		if !ok {
+			log.Fatalf("route %s references unknown sourceCluster %s", route.DisplayName(), route.SourceCluster)
+		}
+		sourceDialer, ok := sourceDialers[sourceCluster.Name]
+		if !ok {
+			log.Fatalf("source dialer missing for %s", sourceCluster.Name)
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -92,7 +105,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := streamRoute(ctx, cfg, route, sourceDialer, writerPool, matcher); err != nil && !errors.Is(err, context.Canceled) {
+			if err := streamRoute(ctx, cfg, route, sourceCluster, sourceDialer, writerPool, matcher); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("route %s stopped: %v", route.DisplayName(), err)
 			}
 		}()
@@ -114,10 +127,10 @@ func buildDialer(cluster config.ClusterConfig, clientID string) (*kafka.Dialer, 
 	}, nil
 }
 
-func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, dialer *kafka.Dialer, writers *kafkapkg.WriterPool, matcher *engine.Matcher) error {
+func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, sourceCluster config.SourceCluster, dialer *kafka.Dialer, writers *kafkapkg.WriterPool, matcher *engine.Matcher) error {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:        cfg.SourceCluster.Brokers,
-		GroupID:        fmt.Sprintf("%s-%s", cfg.SourceGroupID, slug(route.DisplayName())),
+		Brokers:        sourceCluster.Brokers,
+		GroupID:        fmt.Sprintf("%s-%s", sourceCluster.SourceGroupID, slug(route.DisplayName())),
 		GroupTopics:    []string{route.SourceTopic},
 		CommitInterval: cfg.CommitInterval,
 		StartOffset:    kafka.LastOffset,

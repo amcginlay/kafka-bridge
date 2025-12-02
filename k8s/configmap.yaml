@@ -8,16 +8,17 @@ metadata:
 
 data:
   config.yaml: |
-    sourceCluster:
-      brokers: ["source-cluster:9094"]
-      tls:
-        caFile: /etc/kafka-bridge/tls/ca.pem
-        certFile: /etc/kafka-bridge/tls/client-cert.pem
-        keyFile: /etc/kafka-bridge/tls/client-key.pem
+    sourceClusters:
+      - name: source-a
+        brokers: ["source-cluster:9094"]
+        sourceGroupId: filter-source
+        tls:
+          caFile: /etc/kafka-bridge/tls/ca.pem
+          certFile: /etc/kafka-bridge/tls/client-cert.pem
+          keyFile: /etc/kafka-bridge/tls/client-key.pem
     bridgeCluster:
       brokers: ["bridge-cluster:9092"]
     clientId: kafka-filter
-    sourceGroupId: filter-source
     referenceGroupId: filter-reference
     commitInterval: 2s
     http:
@@ -27,6 +28,7 @@ data:
       flushInterval: 10s
     routes:
       - name: route-a
+        sourceCluster: source-a
         sourceTopic: "source-topic-a"
         destinationTopic: filtered-topic-a
         referenceFeeds:

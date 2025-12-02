@@ -16,21 +16,28 @@ const defaultCommitInterval = 5 * time.Second
 
 // Config captures all runtime settings.
 type Config struct {
-	SourceCluster    ClusterConfig `yaml:"sourceCluster"`
-	BridgeCluster    ClusterConfig `yaml:"bridgeCluster"`
-	ClientID         string        `yaml:"clientId"`
-	SourceGroupID    string        `yaml:"sourceGroupId"`
-	ReferenceGroupID string        `yaml:"referenceGroupId"`
-	CommitInterval   time.Duration `yaml:"commitInterval"`
-	Routes           []Route       `yaml:"routes"`
-	HTTP             HTTPServer    `yaml:"http"`
-	Storage          Storage       `yaml:"storage"`
+	SourceClusters   []SourceCluster `yaml:"sourceClusters"`
+	BridgeCluster    ClusterConfig   `yaml:"bridgeCluster"`
+	ClientID         string          `yaml:"clientId"`
+	ReferenceGroupID string          `yaml:"referenceGroupId"`
+	CommitInterval   time.Duration   `yaml:"commitInterval"`
+	Routes           []Route         `yaml:"routes"`
+	HTTP             HTTPServer      `yaml:"http"`
+	Storage          Storage         `yaml:"storage"`
 }
 
 // ClusterConfig holds broker and TLS settings.
 type ClusterConfig struct {
 	Brokers []string   `yaml:"brokers"`
 	TLS     *TLSConfig `yaml:"tls"`
+}
+
+// SourceCluster ties a cluster configuration to a unique name for routing.
+type SourceCluster struct {
+	Name          string     `yaml:"name"`
+	Brokers       []string   `yaml:"brokers"`
+	SourceGroupID string     `yaml:"sourceGroupId"`
+	TLS           *TLSConfig `yaml:"tls"`
 }
 
 // TLSConfig describes certificates required for TLS/mTLS.
@@ -44,6 +51,7 @@ type TLSConfig struct {
 // Route maps one or more source topics to a destination topic with reference feeds.
 type Route struct {
 	Name             string          `yaml:"name"`
+	SourceCluster    string          `yaml:"sourceCluster"`
 	SourceTopic      string          `yaml:"sourceTopic"`
 	DestinationTopic string          `yaml:"destinationTopic"`
 	ReferenceFeeds   []ReferenceFeed `yaml:"referenceFeeds"`
@@ -91,17 +99,24 @@ func Load(path string) (*Config, error) {
 
 // Validate ensures all required fields are populated.
 func (c *Config) Validate() error {
-	if err := c.SourceCluster.validate(); err != nil {
-		return fmt.Errorf("sourceCluster: %w", err)
+	if len(c.SourceClusters) == 0 {
+		return errors.New("at least one sourceCluster must be defined")
+	}
+	sourceClusterNames := make(map[string]struct{}, len(c.SourceClusters))
+	for i, sc := range c.SourceClusters {
+		if err := sc.validate(); err != nil {
+			return fmt.Errorf("sourceCluster %d: %w", i, err)
+		}
+		if _, exists := sourceClusterNames[sc.Name]; exists {
+			return fmt.Errorf("sourceCluster %d: duplicate name %q", i, sc.Name)
+		}
+		sourceClusterNames[sc.Name] = struct{}{}
 	}
 	if err := c.BridgeCluster.validate(); err != nil {
 		return fmt.Errorf("bridgeCluster: %w", err)
 	}
 	if c.ClientID == "" {
 		return errors.New("clientId is required")
-	}
-	if c.SourceGroupID == "" {
-		return errors.New("sourceGroupId is required")
 	}
 	if c.ReferenceGroupID == "" {
 		return errors.New("referenceGroupId is required")
@@ -113,6 +128,9 @@ func (c *Config) Validate() error {
 		if err := c.Routes[i].validate(i); err != nil {
 			return err
 		}
+		if _, ok := sourceClusterNames[c.Routes[i].SourceCluster]; !ok {
+			return fmt.Errorf("route %d: sourceCluster %q not found", i, c.Routes[i].SourceCluster)
+		}
 	}
 	if c.HTTP.ListenAddr == "" {
 		c.HTTP.ListenAddr = ":8080"
@@ -121,6 +139,16 @@ func (c *Config) Validate() error {
 		c.Storage.FlushInterval = 10 * time.Second
 	}
 	return nil
+}
+
+// SourceClusterByName returns a configured source cluster by name.
+func (c *Config) SourceClusterByName(name string) (SourceCluster, bool) {
+	for _, sc := range c.SourceClusters {
+		if sc.Name == name {
+			return sc, true
+		}
+	}
+	return SourceCluster{}, false
 }
 
 func (c ClusterConfig) validate() error {
@@ -133,6 +161,30 @@ func (c ClusterConfig) validate() error {
 		}
 	}
 	return nil
+}
+
+func (s SourceCluster) validate() error {
+	if s.Name == "" {
+		return errors.New("name is required")
+	}
+	if s.SourceGroupID == "" {
+		return errors.New("sourceGroupId is required")
+	}
+	cfg := ClusterConfig{
+		Brokers: s.Brokers,
+		TLS:     s.TLS,
+	}
+	if err := cfg.validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s SourceCluster) ClusterConfig() ClusterConfig {
+	return ClusterConfig{
+		Brokers: s.Brokers,
+		TLS:     s.TLS,
+	}
 }
 
 func (t *TLSConfig) validate() error {
@@ -149,6 +201,9 @@ func (t *TLSConfig) validate() error {
 }
 
 func (r *Route) validate(idx int) error {
+	if r.SourceCluster == "" {
+		return fmt.Errorf("route %d: sourceCluster is required", idx)
+	}
 	if r.SourceTopic == "" {
 		return fmt.Errorf("route %d: sourceTopic cannot be empty", idx)
 	}

@@ -1,6 +1,6 @@
 ## Kafka Topic Filter Tool
 
-This Go utility consumes JSON payloads from one Kafka cluster (secured with mTLS), listens to reference topics and writes to destination topics on a second cluster, and forwards a source message only when its field values match any profile captured from the reference feeds.
+This Go utility consumes JSON payloads from one or more Kafka source clusters (secured with mTLS), listens to reference topics and writes to destination topics on a second cluster, and forwards a source message only when its field values match any profile captured from the reference feeds.
 
 ### Requirements
 
@@ -12,9 +12,9 @@ This Go utility consumes JSON payloads from one Kafka cluster (secured with mTLS
 
 1. Copy `config/config.example.yaml` to `config/config.yaml`.
 2. Adjust the file:
-   - `sourceCluster`: brokers plus TLS certs/keys for the mTLS-protected cluster hosting the source topics.
+   - `sourceClusters`: list of named brokers plus TLS certs/keys for each mTLS-protected cluster hosting source topics; each has its own `sourceGroupId`.
    - `bridgeCluster`: brokers (and optional TLS) for the cluster hosting reference feeds and destination topics.
-   - `clientId`, `sourceGroupId`, `referenceGroupId`: identifiers reused across consumers and producers.
+   - `clientId`, `referenceGroupId`: identifiers reused across consumers and producers.
    - `http`: optional admin server, `listenAddr` defaults to `:8080`. POST reference payloads here instead of (or in addition to) consuming them from reference topics.
    - `storage`: optional persistence; set `path` (e.g., `/var/lib/kafka-bridge/cache.json`) and `flushInterval` to keep cached reference values across restarts.
    - `routes`: each route declares a single `sourceTopic`, destination topic, and per-reference-topic `matchFields` (field paths such as `fieldA` or `subObj.fieldB`) that are extracted from reference payloads; source payloads are matched if any cached value appears anywhere in the message.
@@ -22,22 +22,24 @@ This Go utility consumes JSON payloads from one Kafka cluster (secured with mTLS
 Example snippet:
 
 ```yaml
-sourceCluster:
-  brokers: ["source-cluster:9094"]
-  tls:
-    caFile: path/to/ca.pem
-    certFile: path/to/client-cert.pem
-    keyFile: path/to/client-key.pem
+sourceClusters:
+  - name: source-a
+    brokers: ["source-cluster:9094"]
+    sourceGroupId: filter-source
+    tls:
+      caFile: path/to/ca.pem
+      certFile: path/to/client-cert.pem
+      keyFile: path/to/client-key.pem
 bridgeCluster:
   brokers: ["bridge-cluster:9092"]
 clientId: kafka-filter
-sourceGroupId: filter-source
 referenceGroupId: filter-reference
 storage:
   path: /var/lib/kafka-bridge/cache.json
   flushInterval: 10s
 routes:
   - name: route-a
+    sourceCluster: source-a
     sourceTopic: "source-topic-a"
     destinationTopic: filtered-topic-a
     referenceFeeds:

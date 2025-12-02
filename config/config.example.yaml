@@ -1,15 +1,16 @@
-sourceCluster:
-  brokers:
-    - source-cluster:9094
-  tls:
-    caFile: path/to/ca.pem
-    certFile: path/to/client-cert.pem
-    keyFile: path/to/client-key.pem
+sourceClusters:
+  - name: source-a
+    brokers:
+      - source-cluster:9094
+    sourceGroupId: filter-source
+    tls:
+      caFile: path/to/ca.pem
+      certFile: path/to/client-cert.pem
+      keyFile: path/to/client-key.pem
 bridgeCluster:
   brokers:
     - bridge-cluster:9092
 clientId: kafka-filter
-sourceGroupId: filter-source
 referenceGroupId: filter-reference
 commitInterval: 2s
 http:
@@ -19,6 +20,7 @@ storage:
   flushInterval: 10s
 routes:
   - name: route-a
+    sourceCluster: source-a
     sourceTopic: source-topic-a
     destinationTopic: filtered-topic-a
     referenceFeeds:
@@ -29,6 +31,7 @@ routes:
         matchFields:
           - subObj.fieldB
   - name: route-b
+    sourceCluster: source-a
     sourceTopic: source-topic-b
     destinationTopic: filtered-topic-b
     referenceFeeds:
