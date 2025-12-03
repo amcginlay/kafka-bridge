@@ -254,6 +254,35 @@ func startSnapshotWriter(ctx context.Context, path string, interval time.Duratio
 
 func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engine.Matcher) error {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/referenceAllRoutes", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		defer r.Body.Close()
+		var values []string
+		if err := json.NewDecoder(r.Body).Decode(&values); err != nil {
+			http.Error(w, "invalid JSON array of strings", http.StatusBadRequest)
+			return
+		}
+		if len(values) == 0 {
+			http.Error(w, "empty payload", http.StatusBadRequest)
+			return
+		}
+
+		added := false
+		for _, matcher := range matchers {
+			if matcher.AddValues(values) {
+				added = true
+			}
+		}
+		status := http.StatusOK
+		if added {
+			status = http.StatusCreated
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte("ok\n"))
+	})
 	mux.HandleFunc("/reference/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

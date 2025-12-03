@@ -61,6 +61,8 @@ curl -X POST http://localhost:8080/reference/route-a \
 
 The route key matches the `name` (or falls back to `destinationTopic`, lowercased and slugged).
 
+To add the same values to every configured route, POST to `/referenceAllRoutes` with the same JSON array payload.
+
 ### Run
 
 ```bash
