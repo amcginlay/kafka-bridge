@@ -1,8 +1,13 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -24,27 +29,30 @@ func NewWriterPool(brokers []string, dialer *kafka.Dialer) *WriterPool {
 	}
 }
 
-// Get returns a writer bound to the destination topic.
-func (p *WriterPool) Get(topic string) *kafka.Writer {
+// Get returns a writer bound to the destination topic, ensuring the topic exists.
+func (p *WriterPool) Get(topic string) (*kafka.Writer, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if writer, ok := p.writers[topic]; ok {
-		return writer
+		return writer, nil
+	}
+
+	if err := ensureTopicExists(p.brokers, p.dialer, topic); err != nil {
+		return nil, err
 	}
 
 	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:               p.brokers,
-		Topic:                 topic,
-		Balancer:              &kafka.LeastBytes{},
-		RequiredAcks:          int(kafka.RequireAll),
-		Async:                 false,
-		Dialer:                p.dialer,
-		AllowAutoTopicCreation: true,
+		Brokers:      p.brokers,
+		Topic:        topic,
+		Balancer:     &kafka.LeastBytes{},
+		RequiredAcks: int(kafka.RequireAll),
+		Async:        false,
+		Dialer:       p.dialer,
 	})
 
 	p.writers[topic] = writer
-	return writer
+	return writer, nil
 }
 
 // Close flushes and closes all managed writers.
@@ -59,4 +67,45 @@ func (p *WriterPool) Close() error {
 		}
 	}
 	return firstErr
+}
+
+func ensureTopicExists(brokers []string, dialer *kafka.Dialer, topic string) error {
+	if len(brokers) == 0 {
+		return fmt.Errorf("no brokers configured")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := dialer.DialContext(ctx, "tcp", brokers[0])
+	if err != nil {
+		return fmt.Errorf("dial broker: %w", err)
+	}
+	defer conn.Close()
+
+	ctrl, err := conn.Controller()
+	if err != nil {
+		return fmt.Errorf("get controller: %w", err)
+	}
+
+	ctrlAddr := net.JoinHostPort(ctrl.Host, strconv.Itoa(ctrl.Port))
+	ctrlConn, err := dialer.DialContext(ctx, "tcp", ctrlAddr)
+	if err != nil {
+		return fmt.Errorf("dial controller: %w", err)
+	}
+	defer ctrlConn.Close()
+
+	err = ctrlConn.CreateTopics(kafka.TopicConfig{
+		Topic:             topic,
+		NumPartitions:     -1,
+		ReplicationFactor: -1,
+	})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "exists") {
+			return nil
+		}
+		return fmt.Errorf("create topic %s: %w", topic, err)
+	}
+
+	return nil
 }

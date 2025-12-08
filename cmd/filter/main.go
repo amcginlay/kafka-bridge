@@ -154,7 +154,12 @@ func streamRoute(ctx context.Context, cfg *config.Config, route config.Route, so
 			continue
 		}
 
-		writer := writers.Get(route.DestinationTopic)
+		writer, err := writers.Get(route.DestinationTopic)
+		if err != nil {
+			log.Printf("route %s: ensure topic %s failed: %v", route.DisplayName(), route.DestinationTopic, err)
+			continue
+		}
+
 		if err := writer.WriteMessages(ctx, cloneMessage(msg)); err != nil {
 			log.Printf("route %s: write failed: %v", route.DisplayName(), err)
 			continue
