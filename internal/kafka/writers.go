@@ -34,12 +34,13 @@ func (p *WriterPool) Get(topic string) *kafka.Writer {
 	}
 
 	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:      p.brokers,
-		Topic:        topic,
-		Balancer:     &kafka.LeastBytes{},
-		RequiredAcks: int(kafka.RequireAll),
-		Async:        false,
-		Dialer:       p.dialer,
+		Brokers:               p.brokers,
+		Topic:                 topic,
+		Balancer:              &kafka.LeastBytes{},
+		RequiredAcks:          int(kafka.RequireAll),
+		Async:                 false,
+		Dialer:                p.dialer,
+		AllowAutoTopicCreation: true,
 	})
 
 	p.writers[topic] = writer
