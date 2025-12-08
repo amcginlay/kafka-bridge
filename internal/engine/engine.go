@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"kafka-bridge/internal/config"
 	"kafka-bridge/internal/store"
@@ -49,8 +50,10 @@ func (m *Matcher) ProcessReference(topic string, payload []byte) (bool, error) {
 
 	added := false
 	for _, v := range values {
-		if m.store.Add(m.routeID, v) {
-			added = true
+		for _, variant := range yearVariants(v) {
+			if m.store.Add(m.routeID, variant) {
+				added = true
+			}
 		}
 	}
 	return added, nil
@@ -65,8 +68,10 @@ func (m *Matcher) ShouldForward(payload []byte) (bool, error) {
 
 	values := flattenValues(body)
 	for _, v := range values {
-		if m.store.Contains(m.routeID, v) {
-			return true, nil
+		for _, variant := range yearVariants(v) {
+			if m.store.Contains(m.routeID, variant) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -81,8 +86,10 @@ func (m *Matcher) Size() int {
 func (m *Matcher) AddValues(values []string) bool {
 	added := false
 	for _, v := range values {
-		if m.store.Add(m.routeID, v) {
-			added = true
+		for _, variant := range yearVariants(v) {
+			if m.store.Add(m.routeID, variant) {
+				added = true
+			}
 		}
 	}
 	return added
@@ -145,4 +152,29 @@ func flattenValues(v any) []string {
 	default:
 		return []string{fmt.Sprintf("%v", val)}
 	}
+}
+
+func yearVariants(v string) []string {
+	variants := make(map[string]struct{}, 2)
+	variants[v] = struct{}{}
+
+	// If value starts with NN/, add 20NN/ variant.
+	if len(v) >= 3 && isDigit(rune(v[0])) && isDigit(rune(v[1])) && v[2] == '/' {
+		variants["20"+v] = struct{}{}
+	}
+
+	// If value starts with 20NN/, add NN/ variant.
+	if len(v) >= 5 && strings.HasPrefix(v, "20") && isDigit(rune(v[2])) && isDigit(rune(v[3])) && v[4] == '/' {
+		variants[v[2:]] = struct{}{}
+	}
+
+	out := make([]string, 0, len(variants))
+	for val := range variants {
+		out = append(out, val)
+	}
+	return out
+}
+
+func isDigit(r rune) bool {
+	return unicode.IsDigit(r)
 }
