@@ -64,8 +64,9 @@ type HTTPServer struct {
 
 // ReferenceFeed describes per-topic extraction rules.
 type ReferenceFeed struct {
-	Topic       string   `yaml:"topic"`
-	MatchFields []string `yaml:"matchFields"`
+	Topic        string   `yaml:"topic"`
+	TopicHeaders []string `yaml:"topicHeaders"`
+	MatchFields  []string `yaml:"matchFields"`
 }
 
 // Storage configures optional on-disk persistence for cached values.
@@ -216,6 +217,11 @@ func (r *Route) validate(idx int) error {
 	for fi, feed := range r.ReferenceFeeds {
 		if feed.Topic == "" {
 			return fmt.Errorf("route %d: reference feed %d topic is required", idx, fi)
+		}
+		for _, th := range feed.TopicHeaders {
+			if !strings.Contains(th, "=") {
+				return fmt.Errorf("route %d: reference feed %s topicHeaders entry %q must be key=value", idx, feed.Topic, th)
+			}
 		}
 		if len(feed.MatchFields) == 0 {
 			return fmt.Errorf("route %d: reference feed %s matchFields cannot be empty", idx, feed.Topic)

@@ -14,28 +14,42 @@ import (
 // Matcher coordinates reference caching and source matching per route.
 type Matcher struct {
 	routeID string
-	fields  map[string][]string
+	feeds   []feedMatcher
 	store   *store.MatchStore
 }
 
+type feedMatcher struct {
+	topic        string
+	topicHeaders map[string]string
+	fields       []string
+}
+
 // NewMatcher constructs a matcher for a specific route.
-func NewMatcher(routeID string, feeds []config.ReferenceFeed, store *store.MatchStore) *Matcher {
-	fieldMap := make(map[string][]string, len(feeds))
+func NewMatcher(routeID string, feeds []config.ReferenceFeed, store *store.MatchStore) (*Matcher, error) {
+	var feedMatchers []feedMatcher
 	for _, f := range feeds {
-		fieldMap[f.Topic] = append([]string(nil), f.MatchFields...)
+		hdrs, err := parseTopicHeaders(f.TopicHeaders)
+		if err != nil {
+			return nil, err
+		}
+		feedMatchers = append(feedMatchers, feedMatcher{
+			topic:        f.Topic,
+			topicHeaders: hdrs,
+			fields:       append([]string(nil), f.MatchFields...),
+		})
 	}
 	return &Matcher{
 		routeID: routeID,
-		fields:  fieldMap,
+		feeds:   feedMatchers,
 		store:   store,
-	}
+	}, nil
 }
 
-// ProcessReference ingests a reference payload from a specific topic and stores each extracted value.
-func (m *Matcher) ProcessReference(topic string, payload []byte) (bool, error) {
-	fields, ok := m.fields[topic]
+// ProcessReference ingests a reference payload from a specific topic/headers and stores each extracted value.
+func (m *Matcher) ProcessReference(topic string, headers map[string]string, payload []byte) (bool, error) {
+	matchFields, ok := m.matchFieldsFor(topic, headers)
 	if !ok {
-		return false, fmt.Errorf("no match fields configured for topic %s", topic)
+		return false, fmt.Errorf("no match fields configured for topic %s with provided headers", topic)
 	}
 
 	var body map[string]any
@@ -43,7 +57,7 @@ func (m *Matcher) ProcessReference(topic string, payload []byte) (bool, error) {
 		return false, err
 	}
 
-	values, err := extractMatchValues(body, fields)
+	values, err := extractMatchValues(body, matchFields)
 	if err != nil {
 		return false, err
 	}

@@ -25,6 +25,8 @@ routes:
     destinationTopic: filtered-topic-a
     referenceFeeds:
       - topic: reference-feed-topic-a
+        topicHeaders:
+          - foo=bar
         matchFields:
           - fieldA
       - topic: reference-feed-topic-b
