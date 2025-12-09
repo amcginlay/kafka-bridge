@@ -34,10 +34,13 @@ func TestFingerprintMissingField(t *testing.T) {
 
 func TestMatcherReferenceAndForward(t *testing.T) {
 	s := store.NewMatchStore()
-	m := NewMatcher("route", []config.ReferenceFeed{
+	m, err := NewMatcher("route", []config.ReferenceFeed{
 		{Topic: "feed-a", MatchFields: []string{"fieldA"}},
 		{Topic: "feed-b", MatchFields: []string{"sub.fieldB"}},
 	}, s)
+	if err != nil {
+		t.Fatalf("NewMatcher error: %v", err)
+	}
 
 	refPayload := map[string]any{
 		"fieldA": "value1",
@@ -45,11 +48,11 @@ func TestMatcherReferenceAndForward(t *testing.T) {
 	}
 	refBytes, _ := json.Marshal(refPayload)
 
-	added, err := m.ProcessReference("feed-a", refBytes)
+	added, err := m.ProcessReference("feed-a", nil, refBytes)
 	if err != nil || !added {
 		t.Fatalf("expected reference to be added, err=%v", err)
 	}
-	added, err = m.ProcessReference("feed-b", refBytes)
+	added, err = m.ProcessReference("feed-b", nil, refBytes)
 	if err != nil || !added {
 		t.Fatalf("expected second reference to be added, err=%v", err)
 	}

@@ -121,6 +121,10 @@ func extractMatchValues(payload map[string]any, fields []string) ([]string, erro
 	return out, nil
 }
 
+func (m *Matcher) matchFieldsFor(topic string, headers map[string]string) ([]string, bool) {
+	return matchFieldsForFeed(m.feeds, topic, headers)
+}
+
 func lookupField(payload map[string]any, field string) (any, error) {
 	parts := strings.Split(field, ".")
 	switch len(parts) {
@@ -166,6 +170,49 @@ func flattenValues(v any) []string {
 	default:
 		return []string{fmt.Sprintf("%v", val)}
 	}
+}
+
+func parseTopicHeaders(raw []string) (map[string]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(raw))
+	for _, kv := range raw {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return nil, fmt.Errorf("invalid topicHeader %q (expected key=value)", kv)
+		}
+		out[strings.ToLower(parts[0])] = parts[1]
+	}
+	return out, nil
+}
+
+func matchFieldsForFeed(feeds []feedMatcher, topic string, headers map[string]string) ([]string, bool) {
+	for _, f := range feeds {
+		if f.topic != topic {
+			continue
+		}
+		if !headersMatch(f.topicHeaders, headers) {
+			continue
+		}
+		return f.fields, true
+	}
+	return nil, false
+}
+
+func headersMatch(expected map[string]string, actual map[string]string) bool {
+	if len(expected) == 0 {
+		return true
+	}
+	for k, v := range expected {
+		if actual == nil {
+			return false
+		}
+		if av, ok := actual[strings.ToLower(k)]; !ok || av != v {
+			return false
+		}
+	}
+	return true
 }
 
 func yearVariants(v string) []string {

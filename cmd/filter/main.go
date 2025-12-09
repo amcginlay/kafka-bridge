@@ -61,7 +61,11 @@ func main() {
 	matchers := make(map[string]*engine.Matcher)
 	for _, route := range cfg.Routes {
 		routeID := routeKey(route)
-		matchers[routeID] = engine.NewMatcher(routeID, route.ReferenceFeeds, matchStore)
+		m, err := engine.NewMatcher(routeID, route.ReferenceFeeds, matchStore)
+		if err != nil {
+			log.Fatalf("build matcher for %s: %v", route.DisplayName(), err)
+		}
+		matchers[routeID] = m
 	}
 
 	if cfg.Storage.Path != "" {
@@ -187,7 +191,12 @@ func runReferenceCollector(ctx context.Context, cfg *config.Config, route config
 			return err
 		}
 
-		added, err := matcher.ProcessReference(msg.Topic, msg.Value)
+		headerMap := make(map[string]string, len(msg.Headers))
+		for _, h := range msg.Headers {
+			headerMap[strings.ToLower(h.Key)] = string(h.Value)
+		}
+
+		added, err := matcher.ProcessReference(msg.Topic, headerMap, msg.Value)
 		if err != nil {
 			log.Printf("reference collector %s: invalid payload skipped: %v", route.DisplayName(), err)
 			continue
