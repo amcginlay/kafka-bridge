@@ -183,8 +183,7 @@ func runReferenceCollector(ctx context.Context, cfg *config.Config, route config
 	})
 	defer reader.Close()
 
-	log.Printf("reference collector %s listening to %s", route.DisplayName(), strings.Join(referenceTopics(route.ReferenceFeeds), ","))
-	log.Printf("reference collector %s listening to %s", route.DisplayName(), strings.Join(referenceTopics(route.ReferenceFeeds), ","))
+	log.Printf("reference collector %s listening to %s", route.DisplayName(), strings.Join(referenceFeedLabels(route.ReferenceFeeds), ","))
 	for {
 		msg, err := reader.ReadMessage(ctx)
 		if err != nil {
@@ -196,14 +195,18 @@ func runReferenceCollector(ctx context.Context, cfg *config.Config, route config
 			headerMap[strings.ToLower(h.Key)] = string(h.Value)
 		}
 
-		added, err := matcher.ProcessReference(msg.Topic, headerMap, msg.Value)
+		added, feedName, err := matcher.ProcessReference(msg.Topic, headerMap, msg.Value)
+		feedLabel := feedName
+		if feedLabel == "" {
+			feedLabel = msg.Topic
+		}
 		if err != nil {
-			log.Printf("reference collector %s: invalid payload skipped: %v", route.DisplayName(), err)
+			log.Printf("reference collector %s[%s]: invalid payload skipped: %v", route.DisplayName(), feedLabel, err)
 			continue
 		}
 
 		if added {
-			log.Printf("reference collector %s stored fingerprint (count=%d)", route.DisplayName(), matcher.Size())
+			log.Printf("reference collector %s[%s] stored fingerprint (count=%d)", route.DisplayName(), feedLabel, matcher.Size())
 		}
 	}
 }
@@ -232,6 +235,18 @@ func referenceTopics(feeds []config.ReferenceFeed) []string {
 	out := make([]string, 0, len(feeds))
 	for _, f := range feeds {
 		out = append(out, f.Topic)
+	}
+	return out
+}
+
+func referenceFeedLabels(feeds []config.ReferenceFeed) []string {
+	out := make([]string, 0, len(feeds))
+	for _, f := range feeds {
+		label := f.DisplayName()
+		if f.Topic != "" {
+			label = fmt.Sprintf("%s:%s", label, f.Topic)
+		}
+		out = append(out, label)
 	}
 	return out
 }

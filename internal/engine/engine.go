@@ -19,6 +19,7 @@ type Matcher struct {
 }
 
 type feedMatcher struct {
+	name         string
 	topic        string
 	topicHeaders map[string]string
 	fields       []string
@@ -33,6 +34,7 @@ func NewMatcher(routeID string, feeds []config.ReferenceFeed, store *store.Match
 			return nil, err
 		}
 		feedMatchers = append(feedMatchers, feedMatcher{
+			name:         f.DisplayName(),
 			topic:        f.Topic,
 			topicHeaders: hdrs,
 			fields:       append([]string(nil), f.MatchFields...),
@@ -46,20 +48,20 @@ func NewMatcher(routeID string, feeds []config.ReferenceFeed, store *store.Match
 }
 
 // ProcessReference ingests a reference payload from a specific topic/headers and stores each extracted value.
-func (m *Matcher) ProcessReference(topic string, headers map[string]string, payload []byte) (bool, error) {
-	matchFields, ok := m.matchFieldsFor(topic, headers)
+func (m *Matcher) ProcessReference(topic string, headers map[string]string, payload []byte) (bool, string, error) {
+	feed, ok := m.feedFor(topic, headers)
 	if !ok {
-		return false, fmt.Errorf("no match fields configured for topic %s with provided headers", topic)
+		return false, "", fmt.Errorf("no match fields configured for topic %s with provided headers", topic)
 	}
 
 	var body map[string]any
 	if err := json.Unmarshal(payload, &body); err != nil {
-		return false, err
+		return false, feed.name, err
 	}
 
-	values, err := extractMatchValues(body, matchFields)
+	values, err := extractMatchValues(body, feed.fields)
 	if err != nil {
-		return false, err
+		return false, feed.name, err
 	}
 
 	added := false
@@ -70,7 +72,7 @@ func (m *Matcher) ProcessReference(topic string, headers map[string]string, payl
 			}
 		}
 	}
-	return added, nil
+	return added, feed.name, nil
 }
 
 // ShouldForward checks if ANY cached reference value appears anywhere in the payload.
@@ -119,10 +121,6 @@ func extractMatchValues(payload map[string]any, fields []string) ([]string, erro
 		out = append(out, fmt.Sprintf("%v", val))
 	}
 	return out, nil
-}
-
-func (m *Matcher) matchFieldsFor(topic string, headers map[string]string) ([]string, bool) {
-	return matchFieldsForFeed(m.feeds, topic, headers)
 }
 
 func lookupField(payload map[string]any, field string) (any, error) {
@@ -187,17 +185,17 @@ func parseTopicHeaders(raw []string) (map[string]string, error) {
 	return out, nil
 }
 
-func matchFieldsForFeed(feeds []feedMatcher, topic string, headers map[string]string) ([]string, bool) {
-	for _, f := range feeds {
+func (m *Matcher) feedFor(topic string, headers map[string]string) (feedMatcher, bool) {
+	for _, f := range m.feeds {
 		if f.topic != topic {
 			continue
 		}
 		if !headersMatch(f.topicHeaders, headers) {
 			continue
 		}
-		return f.fields, true
+		return f, true
 	}
-	return nil, false
+	return feedMatcher{}, false
 }
 
 func headersMatch(expected map[string]string, actual map[string]string) bool {

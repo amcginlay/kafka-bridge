@@ -48,11 +48,11 @@ func TestMatcherReferenceAndForward(t *testing.T) {
 	}
 	refBytes, _ := json.Marshal(refPayload)
 
-	added, err := m.ProcessReference("feed-a", nil, refBytes)
+	added, _, err := m.ProcessReference("feed-a", nil, refBytes)
 	if err != nil || !added {
 		t.Fatalf("expected reference to be added, err=%v", err)
 	}
-	added, err = m.ProcessReference("feed-b", nil, refBytes)
+	added, _, err = m.ProcessReference("feed-b", nil, refBytes)
 	if err != nil || !added {
 		t.Fatalf("expected second reference to be added, err=%v", err)
 	}

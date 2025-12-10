@@ -64,6 +64,7 @@ type HTTPServer struct {
 
 // ReferenceFeed describes per-topic extraction rules.
 type ReferenceFeed struct {
+	Name         string   `yaml:"name"`
 	Topic        string   `yaml:"topic"`
 	TopicHeaders []string `yaml:"topicHeaders"`
 	MatchFields  []string `yaml:"matchFields"`
@@ -214,17 +215,26 @@ func (r *Route) validate(idx int) error {
 	if len(r.ReferenceFeeds) == 0 {
 		return fmt.Errorf("route %d: referenceFeeds cannot be empty", idx)
 	}
+	feedNames := make(map[string]struct{}, len(r.ReferenceFeeds))
 	for fi, feed := range r.ReferenceFeeds {
+		if feed.Name == "" {
+			return fmt.Errorf("route %d: reference feed %d must include a name", idx, fi)
+		}
+		lowerName := strings.ToLower(feed.Name)
+		if _, exists := feedNames[lowerName]; exists {
+			return fmt.Errorf("route %d: duplicate reference feed name %q", idx, feed.Name)
+		}
+		feedNames[lowerName] = struct{}{}
 		if feed.Topic == "" {
-			return fmt.Errorf("route %d: reference feed %d topic is required", idx, fi)
+			return fmt.Errorf("route %d: reference feed %q topic is required", idx, feed.DisplayName())
 		}
 		for _, th := range feed.TopicHeaders {
 			if !strings.Contains(th, "=") {
-				return fmt.Errorf("route %d: reference feed %s topicHeaders entry %q must be key=value", idx, feed.Topic, th)
+				return fmt.Errorf("route %d: reference feed %q topicHeaders entry %q must be key=value", idx, feed.DisplayName(), th)
 			}
 		}
 		if len(feed.MatchFields) == 0 {
-			return fmt.Errorf("route %d: reference feed %s matchFields cannot be empty", idx, feed.Topic)
+			return fmt.Errorf("route %d: reference feed %q matchFields cannot be empty", idx, feed.DisplayName())
 		}
 		for _, field := range feed.MatchFields {
 			parts := strings.Split(field, ".")
@@ -247,6 +257,14 @@ func (r Route) DisplayName() string {
 		return r.Name
 	}
 	return r.DestinationTopic
+}
+
+// DisplayName returns an identifier for logs.
+func (f ReferenceFeed) DisplayName() string {
+	if f.Name != "" {
+		return f.Name
+	}
+	return f.Topic
 }
 
 // TLSConfigObject builds a tls.Config for the cluster.
