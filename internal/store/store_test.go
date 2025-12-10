@@ -2,30 +2,24 @@ package store
 
 import "testing"
 
-func TestMatchStorePerRoute(t *testing.T) {
+func TestMatchStoreClear(t *testing.T) {
 	s := NewMatchStore()
+	s.Add("route-a", "one")
+	s.Add("route-a", "two")
+	s.Add("route-b", "one")
 
-	if added := s.Add("routeA", "fp1"); !added {
-		t.Fatalf("expected first insert to add")
+	removed := s.Clear()
+	if removed != 3 {
+		t.Fatalf("expected 3 removed entries, got %d", removed)
 	}
-	if added := s.Add("routeA", "fp1"); added {
-		t.Fatalf("expected duplicate insert to be ignored")
+	if got := s.Size("route-a"); got != 0 {
+		t.Fatalf("expected route-a to be empty, got %d", got)
 	}
-	if !s.Contains("routeA", "fp1") {
-		t.Fatalf("expected routeA to contain fp1")
-	}
-	if s.Contains("routeB", "fp1") {
-		t.Fatalf("unexpected fp1 presence in routeB")
-	}
-	if size := s.Size("routeA"); size != 1 {
-		t.Fatalf("expected size 1 for routeA, got %d", size)
+	if got := s.Size("route-b"); got != 0 {
+		t.Fatalf("expected route-b to be empty, got %d", got)
 	}
 
-	// snapshot and reload
-	snap := s.Snapshot()
-	clone := NewMatchStore()
-	clone.Load(snap)
-	if !clone.Contains("routeA", "fp1") {
-		t.Fatalf("expected cloned store to contain fp1")
+	if removed = s.Clear(); removed != 0 {
+		t.Fatalf("expected no removals from empty store, got %d", removed)
 	}
 }

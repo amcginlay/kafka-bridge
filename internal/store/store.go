@@ -48,6 +48,19 @@ func (s *MatchStore) Size(route string) int {
 	return len(s.values[route])
 }
 
+// Clear removes all cached fingerprints across routes and returns the count removed.
+func (s *MatchStore) Clear() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	removed := 0
+	for _, routeMap := range s.values {
+		removed += len(routeMap)
+	}
+	s.values = make(map[string]map[string]struct{})
+	return removed
+}
+
 // SaveSnapshot writes the current snapshot to disk.
 func (s *MatchStore) SaveSnapshot(path string) error {
 	return Save(path, s.Snapshot())

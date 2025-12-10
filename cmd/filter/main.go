@@ -79,7 +79,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := startHTTPServer(ctx, cfg.HTTP.ListenAddr, matchers); err != nil && !errors.Is(err, context.Canceled) {
+		if err := startHTTPServer(ctx, cfg.HTTP.ListenAddr, matchers, matchStore); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("http server stopped: %v", err)
 		}
 	}()
@@ -266,8 +266,53 @@ func startSnapshotWriter(ctx context.Context, path string, interval time.Duratio
 	}()
 }
 
-func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engine.Matcher) error {
+func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engine.Matcher, matchStore *store.MatchStore) error {
+	mux := buildHTTPMux(matchers, matchStore)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	log.Printf("http server listening on %s", addr)
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return ctx.Err()
+}
+
+func buildHTTPMux(matchers map[string]*engine.Matcher, matchStore *store.MatchStore) *http.ServeMux {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/cache", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		snapshot := matchStore.Snapshot()
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(snapshot); err != nil {
+			log.Printf("cache snapshot encode failed: %v", err)
+		}
+	})
+	mux.HandleFunc("/cache/clear", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		removed := matchStore.Clear()
+		log.Printf("cache cleared via HTTP (%d fingerprints removed)", removed)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
 	mux.HandleFunc("/referenceAllRoutes", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -330,25 +375,5 @@ func startHTTPServer(ctx context.Context, addr string, matchers map[string]*engi
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte("ok\n"))
 	})
-
-	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-		BaseContext: func(_ net.Listener) context.Context {
-			return ctx
-		},
-	}
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-
-	log.Printf("http server listening on %s", addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return ctx.Err()
+	return mux
 }

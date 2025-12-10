@@ -63,6 +63,18 @@ The route key matches the `name` (or falls back to `destinationTopic`, lowercase
 
 To add the same values to every configured route, POST to `/referenceAllRoutes` with the same JSON array payload.
 
+Fetch current cache contents with a GET to `/cache` (returns a JSON map keyed by route):
+
+```bash
+curl http://localhost:8080/cache
+```
+
+To drop all cached reference values across every route, POST to `/cache/clear`:
+
+```bash
+curl -X POST http://localhost:8080/cache/clear
+```
+
 ### Run
 
 ```bash
